@@ -106,16 +106,76 @@ public class BlockInfo {
         sModel = Build.MODEL;
         sApiLevel = VERSION.SDK_INT + " " + VERSION.RELEASE;
         sQualifier = BlockCanaryInternals.getContext().provideQualifier();
+        sImei = getDeviceIdSafely();
+    }
+
+    /**
+     * Safely get device ID, handling permission restrictions on Android 10+
+     */
+    private static String getDeviceIdSafely() {
         try {
-            TelephonyManager telephonyManager = (TelephonyManager) BlockCanaryInternals
-                    .getContext()
-                    .provideContext()
+            // Check if context is available
+            if (BlockCanaryInternals.getContext() == null) {
+                return EMPTY_IMEI;
+            }
+            
+            Context context = BlockCanaryInternals.getContext().provideContext();
+            if (context == null) {
+                return EMPTY_IMEI;
+            }
+            
+            TelephonyManager telephonyManager = (TelephonyManager) context
                     .getSystemService(Context.TELEPHONY_SERVICE);
-            sImei = telephonyManager.getDeviceId();
-        } catch (Exception exception) {
-            Log.e(TAG, NEW_INSTANCE_METHOD, exception);
-            sImei = EMPTY_IMEI;
+            
+            if (telephonyManager == null) {
+                return EMPTY_IMEI;
+            }
+
+            // On Android 10+ (API 29+), getDeviceId() is deprecated and requires special permissions
+            // On Android 11+ (API 30+), it's completely restricted for non-system apps
+            if (VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Try getImei() which requires READ_PHONE_STATE permission (API 26+)
+                // But on Android 11+, even this may fail without privileged permissions
+                try {
+                    if (VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        String imei = telephonyManager.getImei();
+                        if (imei != null && !imei.isEmpty()) {
+                            return imei;
+                        }
+                    }
+                } catch (SecurityException e) {
+                    // Permission denied, fall through to return empty
+                    Log.w(TAG, "Cannot access IMEI due to security restrictions (expected on Android 10+)");
+                } catch (Exception e) {
+                    // Handle any other exceptions from getImei()
+                    Log.w(TAG, "Exception when getting IMEI: " + e.getMessage());
+                }
+                // Return empty IMEI for Android 10+ when permission is denied
+                return EMPTY_IMEI;
+            } else {
+                // For older Android versions, try getDeviceId()
+                try {
+                    String deviceId = telephonyManager.getDeviceId();
+                    if (deviceId != null && !deviceId.isEmpty()) {
+                        return deviceId;
+                    }
+                } catch (SecurityException e) {
+                    Log.w(TAG, "Cannot access device ID due to security restrictions");
+                } catch (Exception e) {
+                    Log.w(TAG, "Exception when getting device ID: " + e.getMessage());
+                }
+            }
+        } catch (SecurityException e) {
+            // Handle SecurityException explicitly - common on Android 10+ due to privacy restrictions
+            Log.w(TAG, "SecurityException when getting device ID (expected on Android 10+): " + e.getMessage());
+        } catch (RuntimeException e) {
+            // Handle other RuntimeExceptions
+            Log.e(TAG, NEW_INSTANCE_METHOD, e);
+        } catch (Exception e) {
+            // Handle any other exceptions
+            Log.e(TAG, NEW_INSTANCE_METHOD, e);
         }
+        return EMPTY_IMEI;
     }
 
     public BlockInfo() {

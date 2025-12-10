@@ -1,1 +1,17 @@
 # BlockCanary 1.5.0 高版本问题
+java.lang.SecurityException: getDeviceId: The uid 10496 does not meet the requirements to access device identifiers.
+at android.os.Parcel.createExceptionOrNull(Parcel.java:3069)
+at android.os.Parcel.createException(Parcel.java:3053)
+at android.os.Parcel.readException(Parcel.java:3036)
+at android.os.Parcel.readException(Parcel.java:2978)
+at com.android.internal.telephony.ITelephony$Stub$Proxy.getDeviceIdWithFeature(ITelephony.java:11536)
+at android.telephony.TelephonyManager.getDeviceId(TelephonyManager.java:2825)
+at com.github.moduth.blockcanary.internal.BlockInfo.<clinit>(BlockInfo.java:114)
+at com.github.moduth.blockcanary.StackSampler.getThreadStackEntries(StackSampler.java:49)
+at com.github.moduth.blockcanary.BlockCanaryInternals$1.onBlockEvent(BlockCanaryInternals.java:55)
+at com.github.moduth.blockcanary.LooperMonitor$1.run(LooperMonitor.java:80)
+at android.os.Handler.handleCallback(Handler.java:958)
+at android.os.Handler.dispatchMessage(Handler.java:99)
+at android.os.Looper.loopOnce(Looper.java:230)
+at android.os.Looper.loop(Looper.java:319)
+at android.os.HandlerThread.run(HandlerThread.java:67)
