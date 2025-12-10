@@ -105,8 +105,19 @@ class CpuSampler extends AbstractSampler {
         BufferedReader pidReader = null;
 
         try {
-            cpuReader = new BufferedReader(new InputStreamReader(
-                    new FileInputStream("/proc/stat")), BUFFER_SIZE);
+            // Try to read /proc/stat, but handle permission denied gracefully on Android 14+
+            try {
+                cpuReader = new BufferedReader(new InputStreamReader(
+                        new FileInputStream("/proc/stat")), BUFFER_SIZE);
+            } catch (Exception e) {
+                // On Android 14+, /proc/stat may not be accessible due to security restrictions
+                if (isPermissionDeniedException(e)) {
+                    Log.w(TAG, "Cannot access /proc/stat, CPU sampling disabled. This is expected on Android 14+");
+                    return;
+                }
+                throw e;
+            }
+            
             String cpuRate = cpuReader.readLine();
             if (cpuRate == null) {
                 cpuRate = "";
@@ -115,8 +126,20 @@ class CpuSampler extends AbstractSampler {
             if (mPid == 0) {
                 mPid = android.os.Process.myPid();
             }
-            pidReader = new BufferedReader(new InputStreamReader(
-                    new FileInputStream("/proc/" + mPid + "/stat")), BUFFER_SIZE);
+            
+            // Try to read /proc/{pid}/stat, but handle permission denied gracefully
+            try {
+                pidReader = new BufferedReader(new InputStreamReader(
+                        new FileInputStream("/proc/" + mPid + "/stat")), BUFFER_SIZE);
+            } catch (Exception e) {
+                // On Android 14+, /proc/{pid}/stat may not be accessible
+                if (isPermissionDeniedException(e)) {
+                    Log.w(TAG, "Cannot access /proc/" + mPid + "/stat, CPU sampling disabled. This is expected on Android 14+");
+                    return;
+                }
+                throw e;
+            }
+            
             String pidCpuRate = pidReader.readLine();
             if (pidCpuRate == null) {
                 pidCpuRate = "";
@@ -124,7 +147,10 @@ class CpuSampler extends AbstractSampler {
 
             parse(cpuRate, pidCpuRate);
         } catch (Throwable throwable) {
-            Log.e(TAG, "doSample: ", throwable);
+            // Only log non-permission errors to avoid spam
+            if (!isPermissionDeniedException(throwable)) {
+                Log.e(TAG, "doSample: ", throwable);
+            }
         } finally {
             try {
                 if (cpuReader != null) {
@@ -137,6 +163,30 @@ class CpuSampler extends AbstractSampler {
                 Log.e(TAG, "doSample: ", exception);
             }
         }
+    }
+
+    /**
+     * Check if the exception is a permission denied error (EACCES)
+     * This is common on Android 14+ where /proc access is restricted
+     */
+    private boolean isPermissionDeniedException(Throwable e) {
+        if (e instanceof java.io.FileNotFoundException) {
+            return true;
+        }
+        if (e.getCause() instanceof android.system.ErrnoException) {
+            android.system.ErrnoException errnoException = (android.system.ErrnoException) e.getCause();
+            // EACCES = 13 (Permission denied)
+            // Check both errno and message to be safe
+            return errnoException.errno == 13 || 
+                   (errnoException.getMessage() != null && 
+                    errnoException.getMessage().contains("EACCES"));
+        }
+        // Also check the exception message directly
+        if (e.getMessage() != null) {
+            String message = e.getMessage();
+            return message.contains("EACCES") || message.contains("Permission denied");
+        }
+        return false;
     }
 
     private void reset() {
