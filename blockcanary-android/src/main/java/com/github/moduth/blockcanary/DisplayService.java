@@ -17,10 +17,12 @@ package com.github.moduth.blockcanary;
 
 import android.annotation.TargetApi;
 import android.app.Notification;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.util.Log;
 
 import com.github.moduth.blockcanary.internal.BlockInfo;
@@ -34,11 +36,16 @@ import static android.app.PendingIntent.FLAG_IMMUTABLE;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.Build.VERSION_CODES.HONEYCOMB;
 import static android.os.Build.VERSION_CODES.JELLY_BEAN;
+import static android.os.Build.VERSION_CODES.O;
+import static android.os.Build.VERSION_CODES.TIRAMISU;
 import com.github.moduth.blockcanary_android.R;
 
 final class DisplayService implements BlockInterceptor {
 
     private static final String TAG = "DisplayService";
+    private static final String CHANNEL_ID = "blockcanary_channel";
+    private static final String CHANNEL_NAME = "BlockCanary Notifications";
+    private static final String CHANNEL_DESCRIPTION = "Notifications for main thread blocking events";
 
     @Override
     public void onBlock(Context context, BlockInfo blockInfo) {
@@ -59,10 +66,64 @@ final class DisplayService implements BlockInterceptor {
         show(context, contentTitle, contentText, pendingIntent);
     }
 
+    /**
+     * Create notification channel for Android 8.0+ (API 26+)
+     */
+    private void createNotificationChannel(Context context) {
+        if (SDK_INT >= O) {
+            NotificationManager notificationManager = (NotificationManager)
+                    context.getSystemService(Context.NOTIFICATION_SERVICE);
+            
+            if (notificationManager == null) {
+                return;
+            }
+            
+            // Check if channel already exists
+            if (notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
+                NotificationChannel channel = new NotificationChannel(
+                        CHANNEL_ID,
+                        CHANNEL_NAME,
+                        NotificationManager.IMPORTANCE_DEFAULT);
+                channel.setDescription(CHANNEL_DESCRIPTION);
+                channel.enableVibration(false);
+                channel.enableLights(false);
+                notificationManager.createNotificationChannel(channel);
+            }
+        }
+    }
+
+    /**
+     * Check if notification permission is granted
+     * On Android 13+ (API 33+), POST_NOTIFICATIONS permission is required
+     */
+    private boolean hasNotificationPermission(Context context) {
+        if (SDK_INT >= TIRAMISU) {
+            // Android 13+ requires POST_NOTIFICATIONS permission
+            return context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) 
+                    == PackageManager.PERMISSION_GRANTED;
+        }
+        // For Android 12 and below, notifications are allowed by default
+        return true;
+    }
+
     @TargetApi(HONEYCOMB)
     private void show(Context context, String contentTitle, String contentText, PendingIntent pendingIntent) {
+        // Check notification permission first
+        if (!hasNotificationPermission(context)) {
+            Log.w(TAG, "Notification permission not granted. Please request POST_NOTIFICATIONS permission in your app.");
+            return;
+        }
+
         NotificationManager notificationManager = (NotificationManager)
                 context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+        if (notificationManager == null) {
+            Log.w(TAG, "NotificationManager is null");
+            return;
+        }
+
+        // Create notification channel for Android 8.0+
+        createNotificationChannel(context);
 
         Notification notification;
         if (SDK_INT < HONEYCOMB) {
@@ -87,6 +148,12 @@ final class DisplayService implements BlockInterceptor {
                     .setAutoCancel(true)
                     .setContentIntent(pendingIntent)
                     .setDefaults(Notification.DEFAULT_SOUND);
+            
+            // Set notification channel for Android 8.0+
+            if (SDK_INT >= O) {
+                builder.setChannelId(CHANNEL_ID);
+            }
+            
             if (SDK_INT < JELLY_BEAN) {
                 notification = builder.getNotification();
             } else {

@@ -74,7 +74,7 @@ public class DemoFragment extends Fragment implements View.OnClickListener {
         switch (v.getId()) {
             case R.id.button1:
                 try {
-                    Thread.sleep(2000);
+                    Thread.sleep(3000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                     Log.e(DEMO_FRAGMENT, "onClick of R.id.button1: ", e);
